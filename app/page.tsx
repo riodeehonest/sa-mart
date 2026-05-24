@@ -1,25 +1,16 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef } from 'react';
 
 export default function Home() {
-  const [location, setLocation] = useState({ lat: 24.817, lng: 93.936 });
-  const [address, setAddress] = useState('Detecting your location...');
+  const [location, setLocation] = useState({ lat: 24.8170, lng: 93.9368 });
+  const [address, setAddress] = useState('Imphal, Manipur');
   const [serviceable, setServiceable] = useState<boolean | null>(null);
-  const [mapReady, setMapReady] = useState(false);
   const [locating, setLocating] = useState(false);
+  const mapRef = useRef<any>(null);
+  const markerRef = useRef<any>(null);
 
   useEffect(() => {
-    if (navigator.geolocation) {
-      navigator.geolocation.getCurrentPosition(
-        (pos) => {
-          setLocation({ lat: pos.coords.latitude, lng: pos.coords.longitude });
-          setAddress(`${pos.coords.latitude.toFixed(4)}, ${pos.coords.longitude.toFixed(4)}`);
-        },
-        () => setAddress('Imphal, Manipur, India')
-      );
-    }
-
     const link = document.createElement('link');
     link.rel = 'stylesheet';
     link.href = 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.css';
@@ -27,58 +18,76 @@ export default function Home() {
 
     const script = document.createElement('script');
     script.src = 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.js';
-    script.onload = () => setMapReady(true);
+    script.onload = () => initMap(24.8170, 93.9368);
     document.head.appendChild(script);
   }, []);
 
-  useEffect(() => {
-    if (!mapReady) return;
+  const initMap = (lat: number, lng: number) => {
     const L = (window as any).L;
-    const map = L.map('map').setView([location.lat, location.lng], 14);
+    if (mapRef.current) {
+      mapRef.current.remove();
+    }
+    const map = L.map('map').setView([lat, lng], 14);
+    mapRef.current = map;
+
     L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
       attribution: '© OpenStreetMap'
     }).addTo(map);
-    const marker = L.marker([location.lat, location.lng], { draggable: true }).addTo(map);
-    marker.bindPopup('Your Location').openPopup();
+
+    const marker = L.marker([lat, lng], { draggable: true }).addTo(map);
+    markerRef.current = marker;
+    marker.bindPopup('📍 Your Location').openPopup();
+
     marker.on('dragend', (e: any) => {
       const p = e.target.getLatLng();
       setLocation({ lat: p.lat, lng: p.lng });
       setAddress(`${p.lat.toFixed(4)}, ${p.lng.toFixed(4)}`);
     });
+
     map.on('click', (e: any) => {
       marker.setLatLng(e.latlng);
       setLocation({ lat: e.latlng.lat, lng: e.latlng.lng });
       setAddress(`${e.latlng.lat.toFixed(4)}, ${e.latlng.lng.toFixed(4)}`);
     });
-    return () => map.remove();
-  }, [mapReady]);
+  };
 
   const useCurrentLocation = () => {
     setLocating(true);
-    if (navigator.geolocation) {
-      navigator.geolocation.getCurrentPosition(
-        (pos) => {
-          const newLat = pos.coords.latitude;
-          const newLng = pos.coords.longitude;
-          setLocation({ lat: newLat, lng: newLng });
-          setAddress(`${newLat.toFixed(4)}, ${newLng.toFixed(4)}`);
-          setLocating(false);
-        },
-        () => {
-          setLocating(false);
-          alert('Could not get your location. Please allow location access.');
-        },
-        { enableHighAccuracy: true }
-      );
-    } else {
+    if (!navigator.geolocation) {
+      alert('Location not supported on this browser.');
       setLocating(false);
-      alert('Location not supported on this device.');
+      return;
     }
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        const lat = pos.coords.latitude;
+        const lng = pos.coords.longitude;
+        setLocation({ lat, lng });
+        setAddress(`${lat.toFixed(4)}, ${lng.toFixed(4)}`);
+        setLocating(false);
+
+        // Move marker and map to new location
+        if (markerRef.current && mapRef.current) {
+          markerRef.current.setLatLng([lat, lng]);
+          markerRef.current.bindPopup('📍 Your Location').openPopup();
+          mapRef.current.flyTo([lat, lng], 16);
+        }
+      },
+      (error) => {
+        setLocating(false);
+        if (error.code === 1) {
+          alert('Location permission denied. Please allow location access in your browser settings and try again.');
+        } else {
+          alert('Could not get your location. Please try again.');
+        }
+      },
+      { enableHighAccuracy: true, timeout: 10000 }
+    );
   };
 
   const checkDelivery = async () => {
     try {
-      const res = await fetch('http://localhost:5000/api/serviceability', {
+      const res = await fetch('https://sa-mart-eight.vercel.app/api/serviceability', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(location)
@@ -108,8 +117,6 @@ export default function Home() {
             <div style={{ fontSize: 14, fontWeight: 500 }}>{address}</div>
           </div>
         </div>
-
-        {/* Buttons row */}
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
           <button
             onClick={useCurrentLocation}
@@ -161,7 +168,7 @@ export default function Home() {
           background: 'white', padding: '8px 16px', borderRadius: 20,
           boxShadow: '0 2px 8px rgba(0,0,0,0.2)', fontSize: 12, color: '#333', whiteSpace: 'nowrap'
         }}>
-          📌 Click on map or drag pin to change location
+          📌 Click on map or drag pin to select location
         </div>
       </div>
 
